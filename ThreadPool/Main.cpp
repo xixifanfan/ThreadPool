@@ -18,10 +18,12 @@
 using namespace std;
 //资源队列
 template<class T>
-struct SafeQue
+class SafeQue
 {
+private:
     queue<T>que;
     shared_mutex sharedMtx;//c++17新特性，性能高于mutex，常用于多读少写情况
+public:
     bool isEmpty()
     {
         shared_lock<shared_mutex>sharedLock(sharedMtx);
@@ -59,7 +61,7 @@ private:
         {
             while (!pool->isShutDown)
             {
-                //如果线程池关闭   或  资源队列不为空时运行，反之阻塞
+                //如果线程池关闭   或   资源队列为空时阻塞，反之运行
                 {//用于锁的释放
                     unique_lock<mutex> uniqueLock(pool->mtx);
                     pool->conditionVar.wait(uniqueLock, [=]() {
@@ -122,8 +124,9 @@ public:
 mutex mtx;
 int main()
 {
+    
     ThreadPool pool(8);
-    int n = 100;
+    int n = 10;
     for (int i = 1;i <= n;i++)
     {
         pool.exec([](int id) {
