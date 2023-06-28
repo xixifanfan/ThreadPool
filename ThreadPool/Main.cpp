@@ -52,11 +52,11 @@ public:
 class ThreadPool
 {
 private:
-    class Worker//工作者
+    class Executor//执行者
     {
     public:
         ThreadPool* pool;
-        explicit Worker(ThreadPool* pool) :pool(pool) {}
+        explicit Executor(ThreadPool* pool) :pool(pool) {}
         void operator()()
         {
             while (!pool->isShutDown)
@@ -68,11 +68,11 @@ private:
                         return this->pool->isShutDown || !this->pool->que.isEmpty();
                     });
                 }
-                function<void()>func;
-                bool flag = this->pool->que.pop(func);
+                function<void()>fun;
+                bool flag = this->pool->que.pop(fun);
                 if (flag)
                 {
-                    func();
+                    fun();
                 }
             }
         }
@@ -86,7 +86,7 @@ public:
     
     explicit ThreadPool(int n) :threads(n), isShutDown(false)
     {
-        for (auto& t : threads)t = thread{ Worker(this) };
+        for (auto& t : threads)t = thread{ Executor(this) };
     }
 
     //不允许拷贝和赋值
@@ -96,16 +96,18 @@ public:
     ThreadPool& operator=(ThreadPool&&) = delete;
 
     template<class F, class... Args>
-    auto exec(F&& f, Args &&...args) -> future<decltype(f(args...))>
+    auto exec(F&& f, Args &&...args) -> future<decltype(f(args...))>//模拟线程传参
     {
+        //将函数打包 返回值转换成void
         function<decltype(f(args...))()>func = [&f, args...]() {
             return f(args...);
         };
         auto taskPtr = make_shared<packaged_task<decltype(f(args...))()>>(func);
         function<void()>warpperFunc = [taskPtr]{
-            taskPtr();
+            (*taskPtr)();
         };
         que.push(warpperFunc);
+        //唤醒线程池中的线程
         conditionVar.notify_one();
         return taskPtr->get_future();
     }
