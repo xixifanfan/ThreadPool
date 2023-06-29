@@ -64,7 +64,7 @@ private:
                 //如果线程池关闭   或   资源队列为空时阻塞，反之运行
                 {//用于锁的释放
                     unique_lock<mutex> uniqueLock(pool->mtx);
-                    pool->conditionVar.wait(uniqueLock, [=]() {
+                    pool->conditionVar.wait(uniqueLock, [this]{
                         return this->pool->isShutDown || !this->pool->que.isEmpty();
                     });
                 }
@@ -99,13 +99,14 @@ public:
     auto exec(F&& f, Args &&...args) -> future<decltype(f(args...))>//模拟线程传参
     {
         //将函数打包 返回值转换成void
+
         function<decltype(f(args...))()>func = [&f, args...]() {
             return f(args...);
-        };
-        auto taskPtr = make_shared<packaged_task<decltype(f(args...))()>>(func);
+        };//func封装装传入函数线程接口
+        auto taskPtr = make_shared<packaged_task<decltype(f(args...))()>>(func);//taskPtr指向func
         function<void()>warpperFunc = [taskPtr]{
             (*taskPtr)();
-        };
+        };//封装成void 
         que.push(warpperFunc);
         //唤醒线程池中的线程
         conditionVar.notify_one();
