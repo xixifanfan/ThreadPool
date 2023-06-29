@@ -16,33 +16,34 @@
 #include<cstring>
 #include<shared_mutex>
 using namespace std;
-//资源队列
+//资源队列(线程安全)  ===>  queue<T,deque>    
 template<class T>
 class SafeQue
 {
 private:
     queue<T>que;
-    shared_mutex sharedMtx;//c++17新特性，性能高于mutex，常用于多读少写情况
+    shared_mutex sharedMtx;//c++17，性能高于mutex，常用于多读少写情况
 public:
-    bool isEmpty()
+    bool isEmpty()const noexcept
     {
-        shared_lock<shared_mutex>sharedLock(sharedMtx);
+        //shared_lock<shared_mutex>sharedLock(sharedMtx);//shared_lock开销大于unique_lock
+        unique_lock<sharedMtx>uniqueLock(sharedMtx);
         return que.empty();
     }
-    size_t size()
+    size_t size() const noexcept
     {
-        shared_lock<shared_mutex>sharedLock(sharedMtx);
+        unique_lock<sharedMtx>uniqueLock(sharedMtx);
         return que.size();
     }
-    void push(T& t)
+    void push(T& t)noexcept
     {
         unique_lock<shared_mutex>uniqueLock(sharedMtx);
         que.push(t);
     }
-    bool pop(T& t)//获取出队的值或对象
+    bool pop(T& t)noexcept //获取出队的值或对象
     {
-        unique_lock<shared_mutex>uniqueLock(sharedMtx);
         if (que.empty())return false;
+        unique_lock<shared_mutex>uniqueLock(sharedMtx);
         t = move(que.front());//头部所有权给t，避免拷贝
         que.pop();
         return true;
@@ -52,7 +53,8 @@ public:
 class ThreadPool
 {
 private:
-    class Executor//执行者
+    //执行器
+    class Executor
     {
     public:
         ThreadPool* pool;
@@ -70,10 +72,7 @@ private:
                 }
                 function<void()>fun;
                 bool flag = this->pool->que.pop(fun);
-                if (flag)
-                {
-                    fun();
-                }
+                if (flag)fun();
             }
         }
     };
@@ -94,27 +93,27 @@ public:
     ThreadPool(ThreadPool&&) = delete;
     ThreadPool& operator=(const ThreadPool&) = delete;
     ThreadPool& operator=(ThreadPool&&) = delete;
-
+    //模拟线程传函数入口
     template<class F, class... Args>
-    auto exec(F&& f, Args &&...args) -> future<decltype(f(args...))>//模拟线程传参
+    auto exec(F&& f, Args &&...args) -> future<decltype(f(args...))>
     {
         //将函数打包 返回值转换成void
 
-        function<decltype(f(args...))()>func = [&f, args...]() {
+        function<decltype(f(args...))()>func = [&f, args...]() {//func封装传入的函数线程入口
             return f(args...);
-        };//func封装装传入函数线程接口
+        };
         auto taskPtr = make_shared<packaged_task<decltype(f(args...))()>>(func);//taskPtr指向func
-        function<void()>warpperFunc = [taskPtr]{
+        function<void()>warpperFunc = [taskPtr]{//封装成返回值为void的函数 
             (*taskPtr)();
-        };//封装成void 
+        };
         que.push(warpperFunc);
-        //唤醒线程池中的线程
-        conditionVar.notify_one();
+        conditionVar.notify_one();//唤醒线程池中的线程
         return taskPtr->get_future();
     }
     ~ThreadPool()
     {
-        auto fun = exec([]() {});//资源队列清空
+        //清空资源队列
+        auto fun = exec([]() {});
         fun.get();
         this->isShutDown = true;
         conditionVar.notify_all();//唤醒所有的线程
