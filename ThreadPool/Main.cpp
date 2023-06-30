@@ -42,8 +42,8 @@ public:
     }
     bool pop(T& t)noexcept //获取出队的值或对象
     {
-        if (que.empty())return false;
         unique_lock<shared_mutex>uniqueLock(sharedMtx);
+        if (que.empty())return false;
         t = move(que.front());//头部所有权给t，避免拷贝
         que.pop();
         return true;
