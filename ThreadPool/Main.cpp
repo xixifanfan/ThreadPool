@@ -76,8 +76,10 @@ private:
             }
         }
     };
+
+    using taskType = function<void()>;
     bool isShutDown;
-    SafeQue<function<void()>>que;
+    SafeQue<taskType>que;
     vector<thread>threads;
     mutex mtx;
     condition_variable conditionVar;
@@ -98,12 +100,11 @@ public:
     auto exec(F&& f, Args &&...args) -> future<decltype(f(args...))>
     {
         //将函数打包 返回值转换成void
-
-        function<decltype(f(args...))()>func = [&f, args...]() {//func封装传入的函数线程入口
-            return f(args...);
-        };
-        auto taskPtr = make_shared<packaged_task<decltype(f(args...))()>>(func);//taskPtr指向func
-        function<void()>warpperFunc = [taskPtr]{//封装成返回值为void的函数 
+        using returnType = invoke_result<f,args...>::type;
+        function<returnType()>func = bind(forward<F>(f), forward<Args>(args)...);             //func封装传入的函数线程入口
+        
+        auto taskPtr = make_shared<packaged_task<returnType()>>(func);//taskPtr指向func
+        taskType warpperFunc = [taskPtr]{//封装成返回值为void的函数 
             (*taskPtr)();
         };
         que.push(warpperFunc);
@@ -113,8 +114,7 @@ public:
     ~ThreadPool()
     {
         //清空资源队列
-        auto fun = exec([]() {});
-        fun.get();
+        
         this->isShutDown = true;
         conditionVar.notify_all();//唤醒所有的线程
         for (auto& t : threads)//将所有线程回收
