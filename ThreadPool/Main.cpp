@@ -53,6 +53,12 @@ public:
 class ThreadPool
 {
 private:
+    using taskType = function<void()>;
+    bool isShutDown;
+    SafeQue<taskType>que;
+    vector<thread>threads;
+    mutex mtx;
+    condition_variable conditionVar;
     //Ö´ÐÐÆ÷
     class Executor
     {
@@ -70,19 +76,14 @@ private:
                         return this->pool->isShutDown || !this->pool->que.isEmpty();
                     });
                 }
-                function<void()>fun;
+                taskType fun;
                 bool flag = this->pool->que.pop(fun);
                 if (flag)fun();
             }
         }
     };
 
-    using taskType = function<void()>;
-    bool isShutDown;
-    SafeQue<taskType>que;
-    vector<thread>threads;
-    mutex mtx;
-    condition_variable conditionVar;
+    
 public:
     
     explicit ThreadPool(int n) :threads(n), isShutDown(false)
