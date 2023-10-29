@@ -1,6 +1,6 @@
 /**
-* ÏîÄ¿Ãû³Æ£º
-*    »ùÓÚc++17µÄ¼òÒ×Ïß³Ì³Ø
+* é¡¹ç›®åç§°ï¼š
+*    åŸºäºc++17çš„ç®€æ˜“çº¿ç¨‹æ± 
 * 
 */
 #include <iostream>
@@ -16,109 +16,109 @@
 #include<cstring>
 #include<shared_mutex>
 using namespace std;
-//×ÊÔ´¶ÓÁĞ(Ïß³Ì°²È«)  ===>  queue<T,deque>    
+//èµ„æºé˜Ÿåˆ—(çº¿ç¨‹å®‰å…¨)  ===>  queue<T,deque>    
 template<class T>
 class SafeQue
 {
 private:
-    queue<T>que;
-    shared_mutex sharedMtx;//c++17£¬ĞÔÄÜ¸ßÓÚmutex£¬³£ÓÃÓÚ¶à¶ÁÉÙĞ´Çé¿ö
+    queue<T>que_;
+    mutex mtx_;
 public:
-    bool isEmpty()const noexcept
+    bool isEmpty()noexcept
     {
-        //shared_lock<shared_mutex>sharedLock(sharedMtx);//shared_lock¿ªÏú´óÓÚunique_lock
-        unique_lock<sharedMtx>uniqueLock(sharedMtx);
-        return que.empty();
+        //shared_lock<shared_mutex>sharedLock(sharedMtx);//shared_lockå¼€é”€å¤§äºunique_lock
+        unique_lock<mutex> _(mtx_);
+        return que_.empty();
     }
-    size_t size() const noexcept
+    size_t size()noexcept
     {
-        unique_lock<sharedMtx>uniqueLock(sharedMtx);
-        return que.size();
+        unique_lock<mutex>_(mtx_);
+        return que_.size();
     }
     void push(T& t)noexcept
     {
-        unique_lock<shared_mutex>uniqueLock(sharedMtx);
-        que.push(t);
+        unique_lock<mutex>_(mtx_);
+        que_.push(t);
     }
-    bool pop(T& t)noexcept //»ñÈ¡³ö¶ÓµÄÖµ»ò¶ÔÏó
+    bool pop(T& t)noexcept //è·å–å‡ºé˜Ÿçš„å€¼æˆ–å¯¹è±¡
     {
-        unique_lock<shared_mutex>uniqueLock(sharedMtx);
-        if (que.empty())return false;
-        t = move(que.front());//Í·²¿ËùÓĞÈ¨¸øt£¬±ÜÃâ¿½±´
-        que.pop();
+        unique_lock<mutex>_(mtx_);
+        if (que_.empty())return false;
+        t = move(que_.front());//å¤´éƒ¨æ‰€æœ‰æƒç»™tï¼Œé¿å…æ‹·è´
+        que_.pop();
         return true;
     }
 };
-//Ïß³Ì³Ø
+//çº¿ç¨‹æ± 
 class ThreadPool
 {
 private:
-    using taskType = function<void()>;
-    bool isShutDown;
-    SafeQue<taskType>que;
-    vector<thread>threads;
-    mutex mtx;
-    condition_variable conditionVar;
-    //Ö´ĞĞÆ÷
+    using TaskType = function<void()>;
+    bool isShutDown_;
+    SafeQue<TaskType>que_;
+    vector<thread>threads_;
+    mutex mtx_;
+    condition_variable conditionVar_;
+    //æ‰§è¡Œå™¨
     class Executor
     {
+    private:
+        ThreadPool* pool_;
     public:
-        ThreadPool* pool;
-        explicit Executor(ThreadPool* pool) :pool(pool) {}
-        void operator()()
+        
+        explicit Executor(ThreadPool* pool) :pool_(pool) {}
+        void operator()()noexcept
         {
-            while (!pool->isShutDown)
+            while (!pool_->isShutDown_)
             {
-                //Èç¹ûÏß³Ì³Ø¹Ø±Õ   »ò   ×ÊÔ´¶ÓÁĞÎª¿ÕÊ±×èÈû£¬·´Ö®ÔËĞĞ
-                {//ÓÃÓÚËøµÄÊÍ·Å
-                    unique_lock<mutex> uniqueLock(pool->mtx);
-                    pool->conditionVar.wait(uniqueLock, [this]{
-                        return this->pool->isShutDown || !this->pool->que.isEmpty();
+                //å¦‚æœçº¿ç¨‹æ± æœªå…³é—­   æˆ–   èµ„æºé˜Ÿåˆ—ä¸ºç©ºæ—¶é˜»å¡ï¼Œåä¹‹è¿è¡Œ
+                {//ç”¨äºé”çš„é‡Šæ”¾
+                    unique_lock<mutex> uniqueLock(pool_->mtx_);
+                    pool_->conditionVar_.wait(uniqueLock, [this]{
+                        return this->pool_->isShutDown_ || !this->pool_->que_.isEmpty();
                     });
                 }
-                taskType fun;
-                bool flag = this->pool->que.pop(fun);
+                TaskType fun;
+                bool flag = this->pool_->que_.pop(fun);
                 if (flag)fun();
             }
         }
     };
-
-    
 public:
     
-    explicit ThreadPool(int n) :threads(n), isShutDown(false)
+    explicit ThreadPool(int n) :threads_(n), isShutDown_(false)
     {
-        for (auto& t : threads)t = thread{ Executor(this) };
+        for (auto& t : threads_)t = thread{ Executor(this) };
     }
 
-    //²»ÔÊĞí¿½±´ºÍ¸³Öµ
+    //ä¸å…è®¸æ‹·è´å’Œèµ‹å€¼
     ThreadPool(const ThreadPool&) = delete;
-    ThreadPool(ThreadPool&&) = delete;
     ThreadPool& operator=(const ThreadPool&) = delete;
-    ThreadPool& operator=(ThreadPool&&) = delete;
-    //Ä£ÄâÏß³Ì´«º¯ÊıÈë¿Ú
+
+    //æ¨¡æ‹Ÿçº¿ç¨‹ä¼ å‡½æ•°å…¥å£
     template<class F, class... Args>
     auto exec(F&& f, Args &&...args) -> future<decltype(f(args...))>
     {
-        //½«º¯Êı´ò°ü ·µ»ØÖµ×ª»»³Évoid
-        using returnType = invoke_result<f,args...>::type;
-        function<returnType()>func = bind(forward<F>(f), forward<Args>(args)...);             //func·â×°´«ÈëµÄº¯ÊıÏß³ÌÈë¿Ú
+        //å°†å‡½æ•°æ‰“åŒ… è¿”å›å€¼è½¬æ¢æˆvoid
+        using ReturnType = typename invoke_result<F,Args...>::type;
+        function<ReturnType()>func = bind(forward<F>(f), forward<Args>(args)...); //funcå°è£…ä¼ å…¥çš„å‡½æ•°çº¿ç¨‹å…¥å£
         
-        auto taskPtr = make_shared<packaged_task<returnType()>>(func);//taskPtrÖ¸Ïòfunc
-        taskType warpperFunc = [taskPtr]{//·â×°³É·µ»ØÖµÎªvoidµÄº¯Êı 
+        auto taskPtr = make_shared<packaged_task<ReturnType()>>(func);//taskPtræŒ‡å‘func
+        TaskType warpperFunc = [taskPtr]{//å°è£…æˆè¿”å›å€¼ä¸ºvoidçš„å‡½æ•° 
             (*taskPtr)();
         };
-        que.push(warpperFunc);
-        conditionVar.notify_one();//»½ĞÑÏß³Ì³ØÖĞµÄÏß³Ì
+        que_.push(warpperFunc);
+        conditionVar_.notify_one();//å”¤é†’çº¿ç¨‹æ± ä¸­çš„çº¿ç¨‹
         return taskPtr->get_future();
     }
+
     ~ThreadPool()
     {
-        //Çå¿Õ×ÊÔ´¶ÓÁĞ
+        //æ¸…ç©ºèµ„æºé˜Ÿåˆ—
         
-        this->isShutDown = true;
-        conditionVar.notify_all();//»½ĞÑËùÓĞµÄÏß³Ì
-        for (auto& t : threads)//½«ËùÓĞÏß³Ì»ØÊÕ
+        this->isShutDown_ = true;
+        conditionVar_.notify_all();//å”¤é†’æ‰€æœ‰çš„çº¿ç¨‹
+        for (auto& t : threads_)//å°†æ‰€æœ‰çº¿ç¨‹å›æ”¶
         {
             if (t.joinable())t.join();
         }
@@ -130,16 +130,26 @@ int main()
     
     ThreadPool pool(8);
     int n = 10;
-    for (int i = 1;i <= n;i++)
-    {
-        pool.exec([](int id) {
-            if (id % 2 == 0)
-            {
-                this_thread::sleep_for(2s);
-            }
-            unique_lock<mutex>uniqueLock(mtx);
-            cout << "id : " << id << endl;
-        }, i);
-    }
+    auto f1 = [](int id) {
+        while (1)
+        {
+            unique_lock<mutex>lock(mtx);
+            cout << "f1:" << id-- << endl;
+            if (id == 0)break;
+            
+        }
+        
+        };
+    auto f2 = [](int id) {
+        while (1)
+        {
+            unique_lock<mutex>lock(mtx);
+            cout << "f2:" << id-- << endl;
+            if (id == 0)break;
+        }
+        };
+    auto ft1= pool.exec(f1, 10);
+    auto ft2 = pool.exec(f2, 100);
+    ft1.get();ft2.wait();
     return 0;
 }
